@@ -1,0 +1,125 @@
+#!/usr/bin/env python
+"""
+Usage: tarpit [options]
+
+Tarpit helps you back up stuff with Tarsnap
+
+Options:
+  -b, --backup BACKUP        The format string to use.
+  -l, --list                 List all backups
+  -v, --version              Show program's version number and exit
+  -h, --help                 Show this help message and exit
+"""
+
+import datetime
+import optparse
+import os
+import subprocess
+import sys
+import textwrap
+import yaml
+
+
+__version__ = (0, 0, 1)
+
+
+CONFIG_FILE = os.environ.get('TARPIT_CONFIG', os.path.expanduser('~/.tarpit'))
+PROGNAME = os.path.basename(sys.argv[0])
+TARSNAP_COMMAND = 'tarsnap -c -f %s %s'
+
+ARCHIVE_FORMATS = {
+    '%y': datetime.datetime.now().strftime('%Y'),
+    '%m': datetime.datetime.now().strftime('%m'),
+    '%d': datetime.datetime.now().strftime('%d'),
+}
+
+
+def error(message, status=1):
+    """
+    Prints ``message`` to stderr then exists with the given ``status``.
+    """
+    message = '%s: %s' % (PROGNAME, message)
+    print >> sys.stderr, '\n'.join(textwrap.wrap(message))
+    sys.exit(status)
+
+
+def helper(*args, **kwargs):
+    """
+    Prints the module's docstring.
+
+    Doing this kills two birds with one stone: it adds PEP 257
+    compliance and allows us to stop using optparse's built-in
+    help flag.
+
+    """
+    print __doc__.strip()
+    sys.exit(0)
+
+
+def list_backups(*args, **kwargs):
+    """
+    Prints all backups to stdout.
+    """
+    for b in parse_config_file().keys():
+        print b
+    sys.exit(0)
+
+
+def parse_archive_name(backup, name):
+    """
+    Formats the final archive name.
+    """
+    name = name.replace('%b', backup)
+    for k, v in ARCHIVE_FORMATS.items():
+        name = name.replace(k, v)
+    return name
+
+
+def parse_config_file():
+    """
+    Parses the config file.
+    """
+    return yaml.load(open(CONFIG_FILE, 'r'))
+
+
+def version(*args):
+    """
+    Convenience function for printing a version number.
+    """
+    print '%s %s' % (PROGNAME, '.'.join(map(str, __version__)))
+    sys.exit(0)
+
+
+def main():
+    parser = optparse.OptionParser()
+    parser.remove_option('--help')
+    parser.add_option('-h', '--help', action='callback', callback=helper)
+    parser.add_option('-v', '--version', action='callback', callback=version)
+    parser.add_option('-b', '--backup', dest='backup', default=None)
+    parser.add_option('-l', '--list', action='callback', callback=list_backups)
+
+    options, args = parser.parse_args()
+
+    # no args. Print help message
+    if len(sys.argv) == 1:
+        helper()
+
+    config = parse_config_file()
+
+    if options.backup not in config.keys():
+        error('Unknown backup "%s"' % options.backup)
+
+    backup_config = config[options.backup]
+    files = ' '.join(backup_config['files']).strip()
+    archive = parse_archive_name(options.backup, backup_config['archive'])
+    command = TARSNAP_COMMAND % (archive, files)
+
+    # go!
+    # shell=True is required for shorthand paths
+    # e.g. ~/Documents, ~/Music
+    proc = subprocess.Popen(command, shell=True)
+    proc.wait()
+
+
+if __name__ == '__main__':
+    main()

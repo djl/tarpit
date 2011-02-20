@@ -1,0 +1,24 @@
+tarpit
+------
+
+Tarpit helps you make backups with Tarsnap_.
+
+.. _Tarsnap: http://www.tarsnap.com/
+
+
+
+Usage
+-----
+
+::
+
+    # List all backups
+    $ tarpit -l
+    Documents
+    Music
+    Project
+    Work
+
+    # Run a backup
+    $ tarpit -b Documents
+
