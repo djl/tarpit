@@ -7,6 +7,8 @@ Tarpit helps you back up stuff with Tarsnap
 Options:
   -b, --backup BACKUP        The format string to use.
   -l, --list                 List all backups
+  -n, --dry-run              Show what will backups will be run
+  -q, --quiet                Supress all output
   -v, --version              Show program's version number and exit
   -h, --help                 Show this help message and exit
 """
@@ -95,8 +97,10 @@ def main():
     parser.remove_option('--help')
     parser.add_option('-h', '--help', action='callback', callback=helper)
     parser.add_option('-v', '--version', action='callback', callback=version)
-    parser.add_option('-b', '--backup', dest='backup', default=None)
+    parser.add_option('-b', '--backup', action='append', dest='backup', default=None)
     parser.add_option('-l', '--list', action='callback', callback=list_backups)
+    parser.add_option('-n', '--dry-run', action='store_true', dest='dry_run', default=False)
+    parser.add_option('-q', '--quiet', action='store_true', dest='quiet', default=False)
 
     options, args = parser.parse_args()
 
@@ -104,21 +108,37 @@ def main():
     if len(sys.argv) == 1:
         helper()
 
+    # grab config yaml
     config = parse_config_file()
 
-    if options.backup not in config.keys():
-        error('Unknown backup "%s"' % options.backup)
+    # the final commands to be run
+    backups = {}
+    for backup in options.backup:
+        if backup not in config.keys():
+            error('Unknown backup "%s"' % backup)
 
-    backup_config = config[options.backup]
-    files = ' '.join(backup_config['files']).strip()
-    archive = parse_archive_name(options.backup, backup_config['archive'])
-    command = TARSNAP_COMMAND % (archive, files)
+        files = ' '.join(config[backup]['files']).strip()
+        archive = parse_archive_name(backup, config[backup]['archive'])
+        command = TARSNAP_COMMAND % (archive, files)
+        backups[backup] = command
+
+
+    # the silent treatment
+    if options.quiet:
+        output = open(os.devnull)
+    else:
+        output = None
 
     # go!
     # shell=True is required for shorthand paths
     # e.g. ~/Documents, ~/Music
-    proc = subprocess.Popen(command, shell=True)
-    proc.wait()
+    for backup, command in backups.items():
+        if options.dry_run:
+            print "Dry-run using the following backups will be run:"
+            print " ", backup
+        else:
+            proc = subprocess.Popen(command, shell=True, stdout=output, stderr=output)
+            proc.wait()
 
 
 if __name__ == '__main__':
