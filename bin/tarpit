@@ -5,7 +5,7 @@ Usage: tarpit [options]
 Tarpit helps you back up stuff with Tarsnap
 
 Options:
-  -b, --backup BACKUP        The format string to use.
+  -b, --backup BACKUP        The backup to be run
   -l, --list                 List all backups
   -n, --dry-run              Show what will backups will be run
   -q, --quiet                Supress all output
