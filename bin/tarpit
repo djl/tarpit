@@ -1,145 +1,168 @@
 #!/usr/bin/env python
 """
-Usage: tarpit [options]
-
-Tarpit helps you back up stuff with Tarsnap
-
-Options:
-  -b, --backup BACKUP        The backup to be run
-  -l, --list                 List all backups
-  -n, --dry-run              Show what will backups will be run
-  -q, --quiet                Supress all output
-  -v, --version              Show program's version number and exit
-  -h, --help                 Show this help message and exit
+Usage: tarpit [<backup>]
 """
-
 import datetime
-import optparse
 import os
 import subprocess
 import sys
 import textwrap
-import yaml
+
+try:
+    import configparser
+except ImportError:
+    import ConfigParser as configparser
 
 
-__version__ = (0, 0, 1)
+FILE = '~/.tarpit'
+MESSAGE_WIDTH = 72
 
 
-CONFIG_FILE = os.environ.get('TARPIT_CONFIG', os.path.expanduser('~/.tarpit'))
-PROGNAME = os.path.basename(sys.argv[0])
-TARSNAP_COMMAND = 'tarsnap -c -f %s %s'
-
-ARCHIVE_FORMATS = {
-    '%y': datetime.datetime.now().strftime('%Y'),
-    '%m': datetime.datetime.now().strftime('%m'),
-    '%d': datetime.datetime.now().strftime('%d'),
-}
-
-
-def error(message, status=1):
+def error(msg, exitcode=1):
     """
-    Prints ``message`` to stderr then exists with the given ``status``.
+    Print ``msg`` to stderr and exit with ``exitcode``.
     """
-    message = '%s: %s' % (PROGNAME, message)
-    print >> sys.stderr, '\n'.join(textwrap.wrap(message))
-    sys.exit(status)
+    msg = os.path.basename(sys.argv[0]) + ': ' + msg
+    msg = '\n'.join(textwrap.wrap(msg, MESSAGE_WIDTH)) + '\n'
+    sys.stderr.write(msg)
+    sys.exit(exitcode)
 
-
-def helper(*args, **kwargs):
+def expand(fn):
     """
-    Prints the module's docstring.
-
-    Doing this kills two birds with one stone: it adds PEP 257
-    compliance and allows us to stop using optparse's built-in
-    help flag.
-
+    Fully expand a path.
     """
-    print __doc__.strip()
-    sys.exit(0)
+    fn = os.path.expandvars(fn)
+    fn = os.path.expanduser(fn)
+    return os.path.abspath(fn)
 
 
-def list_backups(*args, **kwargs):
-    """
-    Prints all backups to stdout.
-    """
-    for b in parse_config_file().keys():
-        print b
-    sys.exit(0)
+class Tarpit(object):
+
+    OPTIONS = ['name', 'files', 'exclude']
+
+    def __init__(self):
+        self.setup_config()
+
+    def backup(self, backup):
+        """
+        Run a backup.
+        """
+        try:
+            options = self.options[backup]
+        except KeyError:
+            error("Invalid backup '%s'" % backup)
+
+        backup = Backup(**options)
+        backup.run()
+
+    def setup_config(self):
+        """
+        Parse config file.
+        """
+        self.config = configparser.ConfigParser()
+        self.backups = []
+        self.options = {}
+
+        try:
+            self.config.readfp(open(expand(FILE)))
+        except IOError:
+            error("Couldn't read your config file.")
+
+        for section in self.config.sections():
+            self.backups.append(section)
+            self.options[section] = {}
+            for option in self.OPTIONS:
+                if self.config.has_option(section, option):
+                    self.options[section][option] = self.config.get(section, option)
 
 
-def parse_archive_name(backup, name):
-    """
-    Formats the final archive name.
-    """
-    name = name.replace('%b', backup)
-    for k, v in ARCHIVE_FORMATS.items():
-        name = name.replace(k, v)
-    return name
 
+class Backup(object):
 
-def parse_config_file():
-    """
-    Parses the config file.
-    """
-    return yaml.load(open(CONFIG_FILE, 'r'))
+    REQUIRED_OPTIONS = ['name', 'files']
 
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
-def version(*args):
-    """
-    Convenience function for printing a version number.
-    """
-    print '%s %s' % (PROGNAME, '.'.join(map(str, __version__)))
-    sys.exit(0)
+        self.validate_options()
+        self.validate_files()
+        self.validate_exclude()
+
+    def create_archive(self):
+        """
+        Create the archive from the given list of files.
+        """
+        filename = datetime.datetime.now().strftime(self.name)
+        commands = ['tarsnap', '-c', '-f', ' '.join(self.files)]
+        if self.exclude:
+            commands.append('--exclude ' + ' '.join(self.exclude))
+        commands.append(filename)
+        proc = subprocess.Popen(' '.join(commands), shell=True)
+        proc.communicate()
+
+    def validate_exclude(self):
+        """
+        Validate the `exclude` option.
+        """
+        self.exclude = self.validate_filenames(self.exclude)
+
+    def validate_filenames(self, files):
+        """
+        Make sure the given list files is not empty and that each file
+        exists.
+        """
+        if not files:
+            error("No files specified for backup '%s'" % self.backup)
+
+        validated = []
+        for fn in files.split(','):
+            fn = expand(fn.strip())
+            if not any([os.path.isfile(fn), os.path.isdir(fn)]):
+                error("Invalid file/directory '%s' for backup '%s'" % (fn, self.backup))
+            validated.append(fn)
+        return validated
+
+    def validate_files(self):
+        """
+        Validate the `files` option.
+        """
+        self.files = self.validate_filenames(self.files)
+
+    def validate_options(self):
+        """
+        Make sure each required option is present.
+        """
+        for option in self.REQUIRED_OPTIONS:
+            if not getattr(self, option, None):
+                error("Backup '%s' is missing option '%s'" % (self.backup, option))
+
+    def run(self):
+        """
+        Create an archive and upload it, encrypting if necessary.
+        """
+        try:
+            self.create_archive()
+        except Exception as e:
+            error(e)
 
 
 def main():
-    parser = optparse.OptionParser()
-    parser.remove_option('--help')
-    parser.add_option('-h', '--help', action='callback', callback=helper)
-    parser.add_option('-v', '--version', action='callback', callback=version)
-    parser.add_option('-b', '--backup', action='append', dest='backup', default=None)
-    parser.add_option('-l', '--list', action='callback', callback=list_backups)
-    parser.add_option('-n', '--dry-run', action='store_true', dest='dry_run', default=False)
-    parser.add_option('-q', '--quiet', action='store_true', dest='quiet', default=False)
+    # help message
+    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+        sys.stderr.write(__doc__.lstrip())
+        sys.exit(2)
 
-    options, args = parser.parse_args()
+    # the heavy lifter
+    tarpit = Tarpit()
 
-    # no args. Print help message
+    # list all backups
     if len(sys.argv) == 1:
-        helper()
+        sys.stdout.write('\n'.join(sorted(tarpit.backups)) + '\n')
+        sys.exit(0)
 
-    # grab config yaml
-    config = parse_config_file()
-
-    # the final commands to be run
-    backups = {}
-    for backup in options.backup:
-        if backup not in config.keys():
-            error('Unknown backup "%s"' % backup)
-
-        files = ' '.join(config[backup]['files']).strip()
-        archive = parse_archive_name(backup, config[backup]['archive'])
-        command = TARSNAP_COMMAND % (archive, files)
-        backups[backup] = command
-
-
-    # the silent treatment
-    if options.quiet:
-        output = open(os.devnull)
-    else:
-        output = None
-
-    # go!
-    # shell=True is required for shorthand paths
-    # e.g. ~/Documents, ~/Music
-    for backup, command in backups.items():
-        if options.dry_run:
-            print "Dry-run using the following backups will be run:"
-            print " ", backup
-        else:
-            proc = subprocess.Popen(command, shell=True, stdout=output, stderr=output)
-            proc.wait()
-
+    # do it
+    tarpit.backup(sys.argv[1])
 
 if __name__ == '__main__':
     main()
