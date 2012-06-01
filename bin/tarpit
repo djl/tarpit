@@ -94,10 +94,10 @@ class Backup(object):
         Create the archive from the given list of files.
         """
         filename = datetime.datetime.now().strftime(self.name)
-        commands = ['tarsnap', '-c', '-f', ' '.join(self.files)]
+        commands = ['tarsnap', '-c', '-f', filename]
         if self.exclude:
             commands.append('--exclude ' + ' '.join(self.exclude))
-        commands.append(filename)
+        commands.append(' '.join(self.files))
         proc = subprocess.Popen(' '.join(commands), shell=True)
         proc.communicate()
 
@@ -105,7 +105,10 @@ class Backup(object):
         """
         Validate the `exclude` option.
         """
-        self.exclude = self.validate_filenames(self.exclude)
+        try:
+            self.exclude = self.validate_filenames(self.exclude)
+        except AttributeError:
+            self.exclude = []
 
     def validate_filenames(self, files):
         """
