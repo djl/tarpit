@@ -6,7 +6,6 @@ import datetime
 import os
 import subprocess
 import sys
-import textwrap
 
 try:
     import configparser
@@ -15,7 +14,6 @@ except ImportError:
 
 
 FILE = '~/.tarpit'
-MESSAGE_WIDTH = 72
 
 
 def error(msg, exitcode=1):
@@ -23,9 +21,9 @@ def error(msg, exitcode=1):
     Print ``msg`` to stderr and exit with ``exitcode``.
     """
     msg = os.path.basename(sys.argv[0]) + ': ' + msg
-    msg = '\n'.join(textwrap.wrap(msg, MESSAGE_WIDTH)) + '\n'
-    sys.stderr.write(msg)
+    sys.stderr.write(msg + '\n')
     sys.exit(exitcode)
+
 
 def expand(fn):
     """
@@ -36,49 +34,9 @@ def expand(fn):
     return os.path.abspath(fn)
 
 
-class Tarpit(object):
-
-    OPTIONS = ['name', 'files', 'exclude']
-
-    def __init__(self):
-        self.setup_config()
-
-    def backup(self, backup):
-        """
-        Run a backup.
-        """
-        try:
-            options = self.options[backup]
-        except KeyError:
-            error("Invalid backup '%s'" % backup)
-
-        backup = Backup(**options)
-        backup.run()
-
-    def setup_config(self):
-        """
-        Parse config file.
-        """
-        self.config = configparser.ConfigParser()
-        self.backups = []
-        self.options = {}
-
-        try:
-            self.config.readfp(open(expand(FILE)))
-        except IOError:
-            error("Couldn't read your config file.")
-
-        for section in self.config.sections():
-            self.backups.append(section)
-            self.options[section] = {}
-            for option in self.OPTIONS:
-                if self.config.has_option(section, option):
-                    self.options[section][option] = self.config.get(section, option)
-
-
-
 class Backup(object):
 
+    OPTIONS = ['name', 'files', 'exclude']
     REQUIRED_OPTIONS = ['name', 'files']
 
     def __init__(self, **kwargs):
@@ -88,18 +46,6 @@ class Backup(object):
         self.validate_options()
         self.validate_files()
         self.validate_exclude()
-
-    def create_archive(self):
-        """
-        Create the archive from the given list of files.
-        """
-        filename = datetime.datetime.now().strftime(self.name)
-        commands = ['tarsnap', '-c', '-f', filename]
-        if self.exclude:
-            commands.append('--exclude ' + ' '.join(self.exclude))
-        commands.append(' '.join(self.files))
-        proc = subprocess.Popen(' '.join(commands), shell=True)
-        proc.communicate()
 
     def validate_exclude(self):
         """
@@ -142,30 +88,40 @@ class Backup(object):
 
     def run(self):
         """
-        Create an archive and upload it, encrypting if necessary.
+        Run Tarsnap
         """
-        try:
-            self.create_archive()
-        except Exception as e:
-            error(e)
+        filename = datetime.datetime.now().strftime(self.name)
+        commands = ['tarsnap', '-c', '-f', filename]
+        if self.exclude:
+            commands.append('--exclude ' + ' '.join(self.exclude))
+        commands.append(' '.join(self.files))
+        proc = subprocess.Popen(' '.join(commands), shell=True)
+        proc.communicate()
 
 
 def main():
-    # help message
-    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
-        sys.stderr.write(__doc__.lstrip())
-        sys.exit(2)
+    config = configparser.ConfigParser()
 
-    # the heavy lifter
-    tarpit = Tarpit()
+    try:
+        config.readfp(open(expand(FILE)))
+    except IOError:
+        error("Couldn't read your config file.")
 
     # list all backups
     if len(sys.argv) == 1:
-        sys.stdout.write('\n'.join(sorted(tarpit.backups)) + '\n')
+        sys.stdout.write('\n'.join(sorted(config.sections())) + '\n')
         sys.exit(0)
 
-    # do it
-    tarpit.backup(sys.argv[1])
+    # does the backup exist?
+    try:
+        options = dict(config.items(sys.argv[1]))
+    except configparser.NoSectionError:
+        error("Invalid backup '%s'" % sys.argv[1])
+
+    # backup is good. let's do it
+    backup = Backup(**options)
+    backup.run()
+
 
 if __name__ == '__main__':
     main()
