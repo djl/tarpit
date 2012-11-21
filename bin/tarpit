@@ -115,6 +115,7 @@ def main():
     # does the backup exist?
     try:
         options = dict(config.items(sys.argv[1]))
+        options['backup'] = sys.argv[1]
     except configparser.NoSectionError:
         error("Invalid backup '%s'" % sys.argv[1])
 
