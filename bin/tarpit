@@ -52,11 +52,11 @@ class Backup(object):
         Validate the `exclude` option.
         """
         try:
-            self.exclude = self.validate_filenames(self.exclude)
+            self.exclude = self.validate_filenames(self.exclude, True)
         except AttributeError:
             self.exclude = []
 
-    def validate_filenames(self, files):
+    def validate_filenames(self, files, skip_missing=False):
         """
         Make sure the given list files is not empty and that each file
         exists.
@@ -68,6 +68,8 @@ class Backup(object):
         for fn in files.split(','):
             fn = expand(fn.strip())
             if not any([os.path.isfile(fn), os.path.isdir(fn)]):
+                if skip_missing:
+                    continue
                 error("Invalid file/directory '%s' for backup '%s'" % (fn, self.backup))
             validated.append(fn)
         return validated
