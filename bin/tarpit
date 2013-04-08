@@ -97,7 +97,7 @@ class Backup(object):
         if self.exclude:
             commands.append('--exclude ' + ' '.join(self.exclude))
         commands.append(' '.join(self.files))
-        proc = subprocess.Popen(' '.join(commands), shell=True)
+        proc = subprocess.Popen(commands)
         proc.communicate()
 
 
