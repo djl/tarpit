@@ -95,8 +95,9 @@ class Backup(object):
         filename = datetime.datetime.now().strftime(self.name)
         commands = ['tarsnap', '-c', '-f', filename]
         if self.exclude:
-            commands.append('--exclude ' + ' '.join(self.exclude))
-        commands.append(' '.join(self.files))
+            for f in self.exclude:
+                commands += ['--exclude', f]
+        commands += self.files
         proc = subprocess.Popen(commands)
         proc.communicate()
 
