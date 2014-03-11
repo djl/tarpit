@@ -36,7 +36,7 @@ def expand(fn):
 
 class Backup(object):
 
-    OPTIONS = ['name', 'files', 'exclude']
+    OPTIONS = ['name', 'files', 'exclude', 'keyfile']
     REQUIRED_OPTIONS = ['name', 'files']
 
     def __init__(self, **kwargs):
@@ -94,10 +94,15 @@ class Backup(object):
         """
         filename = datetime.datetime.now().strftime(self.name)
         commands = ['tarsnap', '-c', '-f', filename]
+
+        if hasattr(self, 'keyfile'):
+            commands += ['--keyfile', self.keyfile]
+
         if self.exclude:
             for f in self.exclude:
                 commands += ['--exclude', f]
         commands += self.files
+
         proc = subprocess.Popen(commands)
         proc.communicate()
 
