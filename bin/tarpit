@@ -96,7 +96,7 @@ class Backup(object):
         commands = ['tarsnap', '-c', '-f', filename]
 
         if hasattr(self, 'keyfile'):
-            commands += ['--keyfile', self.keyfile]
+            commands += ['--keyfile', expand(self.keyfile)]
 
         if self.exclude:
             for f in self.exclude:
