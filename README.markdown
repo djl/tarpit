@@ -25,38 +25,46 @@ Run a backup with `tarpit <backup>`:
 SETUP
 -----
 
-tarpit reads from an INI-style config file called `~/.tarpit`. Each
-section of this file corresponds to a single backup.
+Your backup configs are kept in `~/.tarpit/`. Files are regular shell
+scripts which will be `source`d at run time. These scripts can contain
+pretty much anything you like as long as a few variables are set:
 
 
-### Backup settings
+* `ARCHIVE`
 
-* `name`
+  The name of the archive.
 
-   The name of the archive to be created. Treated as an `strftime(3)` string.
+* `FILES`
 
-* `files`
+  An array of files and directories to include in the archive.
 
-   A list of comma-separated files and directories to be included in the
-   backup.
+* `EXCLUDE` (optional)
 
-* `exclude` (optional)
+  An array of patterns for Tarsnap to ignore.
 
-   A list of files to exclude from a backup.
+* `KEYFILE` (optional)
+
+  Path to the keyfile to use for this backup
 
 
-EXAMPLE
--------
 
-    [documents]
-    name = documents-%Y-%m-%d
-    files = /home/bob/Documents
+EXAMPLES
+--------
 
-    [misc]
-    name = misc-%Y-%m-%d
-    files = /home/bob/misc, /home/bob/this, /home/bob/that
+    # ~/.tarpit/documents
+    ARCHIVE="docs-$(date +%Y-%m-%d)"
+    FILES=(~/Documents)
 
-    [var]
-    name = var-%Y-%m-%d
-    files = /home/bob/var
-    exclude = /home/bob/var/tmp
+    # ~/.tarpit/misc
+    ARCHIVE="$(hostname)-misc-$(date +%Y-%m-%d)"
+    FILES=(~/var/log ~/var/mail)
+    EXCLUDE=(~/var/tmp)
+    KEYFILE=/path/to/custom.key
+
+    # ~/.tarpit/work
+    SRC=~/Work
+    DEST=/mnt/backups/Work
+    EXCLUDE=(
+      ~/Work/secret_project1
+      ~/Work/secret_project2
+    )

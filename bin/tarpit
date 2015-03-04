@@ -1,136 +1,56 @@
-#!/usr/bin/env python
-"""
-Usage: tarpit [<backup>]
-"""
-import datetime
-import os
-import subprocess
-import sys
+#!/usr/bin/env bash
+#/ Usage: tarpit [<options>] <backup>
+#/
+#/ Options:
+#/   -c <directory>   The config directory
+#/   -h               Show this message and exit
 
-try:
-    import configparser
-except ImportError:
-    import ConfigParser as configparser
+PROGNAME="$(basename $0)"
+CONFIG_DIR="$HOME/.tarpit"
 
+fail() {
+  echo "$PROGNAME: $1" >&2
+  exit 1
+}
 
-FILE = '~/.tarpit'
+backups() {
+  find "$1" -type f | xargs basename
+  exit 0
+}
 
+usage() {
+  grep "^#/" $0 | cut -c4- >&2
+  exit 2
+}
 
-def error(msg, exitcode=1):
-    """
-    Print ``msg`` to stderr and exit with ``exitcode``.
-    """
-    msg = os.path.basename(sys.argv[0]) + ': ' + msg
-    sys.stderr.write(msg + '\n')
-    sys.exit(exitcode)
+while getopts :hc: o; do
+  case "$o" in
+    c) CONFIG_DIR="$OPTARG" ;;
+    h) usage ;;
+    ?) fail "Invalid option: -$OPTARG" ;;
+  esac
+done
 
+shift $((OPTIND-1))
 
-def expand(fn):
-    """
-    Fully expand a path.
-    """
-    fn = os.path.expandvars(fn)
-    fn = os.path.expanduser(fn)
-    return os.path.abspath(fn)
+BACKUP="$1"
 
+[ -d "$CONFIG_DIR" ] || exit
+[ -n "$BACKUP" ] || backups $CONFIG_DIR
+[ -f "$CONFIG_DIR/$BACKUP" ] || fail "Unknown backup '$BACKUP'"
 
-class Backup(object):
+unset ARCHIVE EXCLUDE FILES KEYFILE
 
-    OPTIONS = ['name', 'files', 'exclude', 'keyfile']
-    REQUIRED_OPTIONS = ['name', 'files']
+source "$CONFIG_DIR/$BACKUP"
 
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+cmd="tarsnap -c -f $ARCHIVE"
 
-        self.validate_options()
-        self.validate_files()
-        self.validate_exclude()
+if [ -n "$EXCLUDE" ]; then
+  for e in "${EXCLUDE[@]}"; do
+    cmd="$cmd --exclude $e"
+  done
+fi
 
-    def validate_exclude(self):
-        """
-        Validate the `exclude` option.
-        """
-        try:
-            self.exclude = self.validate_filenames(self.exclude, True)
-        except AttributeError:
-            self.exclude = []
+[ -n "$KEYFILE" ] && cmd="$cmd --keyfile $KEYFILE"
 
-    def validate_filenames(self, files, skip_missing=False):
-        """
-        Make sure the given list files is not empty and that each file
-        exists.
-        """
-        if not files:
-            error("No files specified for backup '%s'" % self.backup)
-
-        validated = []
-        for fn in files.split(','):
-            fn = expand(fn.strip())
-            if not any([os.path.isfile(fn), os.path.isdir(fn)]):
-                if skip_missing:
-                    continue
-                error("Invalid file/directory '%s' for backup '%s'" % (fn, self.backup))
-            validated.append(fn)
-        return validated
-
-    def validate_files(self):
-        """
-        Validate the `files` option.
-        """
-        self.files = self.validate_filenames(self.files)
-
-    def validate_options(self):
-        """
-        Make sure each required option is present.
-        """
-        for option in self.REQUIRED_OPTIONS:
-            if not getattr(self, option, None):
-                error("Backup '%s' is missing option '%s'" % (self.backup, option))
-
-    def run(self):
-        """
-        Run Tarsnap
-        """
-        filename = datetime.datetime.now().strftime(self.name)
-        commands = ['tarsnap', '-c', '-f', filename]
-
-        if hasattr(self, 'keyfile'):
-            commands += ['--keyfile', expand(self.keyfile)]
-
-        if self.exclude:
-            for f in self.exclude:
-                commands += ['--exclude', f]
-        commands += self.files
-
-        proc = subprocess.Popen(commands)
-        proc.communicate()
-
-
-def main():
-    config = configparser.ConfigParser()
-
-    try:
-        config.readfp(open(expand(FILE)))
-    except IOError:
-        error("Couldn't read your config file.")
-
-    # list all backups
-    if len(sys.argv) == 1:
-        sys.stdout.write('\n'.join(sorted(config.sections())) + '\n')
-        sys.exit(0)
-
-    # does the backup exist?
-    try:
-        options = dict(config.items(sys.argv[1]))
-        options['backup'] = sys.argv[1]
-    except configparser.NoSectionError:
-        error("Invalid backup '%s'" % sys.argv[1])
-
-    # backup is good. let's do it
-    backup = Backup(**options)
-    backup.run()
-
-
-if __name__ == '__main__':
-    main()
+$cmd "${FILES[@]}"
