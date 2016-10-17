@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-#/ Usage: tarpit [<options>] <backup>
-#/
-#/ Options:
-#/   -c <directory>   The config directory
-#/   -h               Show this message and exit
+#/ Usage: tarpit <backup>
+set -e
 
 PROGNAME="$(basename $0)"
-CONFIG_DIR="$HOME/.tarpit"
+PREFIX="${TARCRYPT_DIR:-$HOME/.config/${PROGNAME}}"
 
-fail() {
+abort() {
   echo "$PROGNAME: $1" >&2
   exit 1
 }
@@ -23,34 +20,25 @@ usage() {
   exit 2
 }
 
-while getopts :hc: o; do
-  case "$o" in
-    c) CONFIG_DIR="$OPTARG" ;;
-    h) usage ;;
-    ?) fail "Invalid option: -$OPTARG" ;;
-  esac
-done
-
-shift $((OPTIND-1))
-
-BACKUP="$1"
-
-[ -d "$CONFIG_DIR" ] || exit
-[ -n "$BACKUP" ] || backups $CONFIG_DIR
-[ -f "$CONFIG_DIR/$BACKUP" ] || fail "Unknown backup '$BACKUP'"
-
-unset ARCHIVE EXCLUDE FILES KEYFILE
-
-source "$CONFIG_DIR/$BACKUP"
-
-cmd="tarsnap -c -f $ARCHIVE"
-
-if [ -n "$EXCLUDE" ]; then
-  for e in "${EXCLUDE[@]}"; do
-    cmd="$cmd --exclude $e"
-  done
+if [ $# -eq 0 ]; then
+  [ -d "$PREFIX" ] || abort "Could not read config directories '$PREFIX'"
+  find "$PREFIX/" -type d -mindepth 1 -maxdepth 1 -print0 | xargs -0 -n1 basename
+  exit 0
 fi
 
-[ -n "$KEYFILE" ] && cmd="$cmd --keyfile $KEYFILE"
+BACKUP="${!#}"
+PRE_SCRIPT="$PREFIX/$BACKUP/pre"
+POST_SCRIPT="$PREFIX/$BACKUP/post"
 
-$cmd "${FILES[@]}"
+[ ! -f "$PREFIX/$BACKUP/config" ] && abort "Unknown backup '$BACKUP'"
+
+source "$PREFIX/$BACKUP/config" > /dev/null 2>&1
+
+[ -x "$PRE_SCRIPT" ] && "$PRE_SCRIPT"
+
+[ -n "$EXCLUDE" ] && excluded=$(printf " --exclude %s" "${EXCLUDE[@]}")
+cmd="tarsnap -c -f "$NAME" ${excluded[@]} ${FILES[@]}"
+[ -n "$KEYFILE" ] && cmd="$cmd --keyfile $KEYFILE"
+echo $cmd
+
+[ -x "$POST_SCRIPT" ] && "$POST_SCRIPT"
